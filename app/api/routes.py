@@ -1,3 +1,4 @@
+
 from typing import Literal
 
 from fastapi import APIRouter
@@ -6,75 +7,64 @@ from pydantic import BaseModel, Field
 from app.crew.crew_setup import (
     build_coding_crew,
     build_research_coding_crew,
-    build_manager_crew
+    build_testing_crew,
+    build_debugging_crew,
+    build_coding_fix_crew,
+    build_manager_crew,
 )
 
 from app.utils.file_parser import parse_files
 
 from app.utils.validation import (
     validate_generated_files,
-    compact_validation_summary
+    compact_validation_summary,
 )
 
 
 router = APIRouter()
 
 
-class ProjectRequest(BaseModel):
+# Maximum number of debugging/fixing attempts
+MAX_RETRIES = 2
 
-    project_request: str = Field(
-        min_length=3
-    )
+
+class ProjectRequest(BaseModel):
+    project_request: str = Field(min_length=3)
 
     complexity: Literal[
         "auto",
         "simple",
-        "complex"
+        "complex",
     ] = "auto"
 
     review: bool = False
 
 
-def detect_complexity(
-    request: str
-) -> str:
-
+def detect_complexity(request: str) -> str:
     """
-    Simple rule-based complexity detection.
+    Rule-based complexity detection.
 
-    IMPORTANT:
-    This does NOT call an LLM.
+    This does NOT use an LLM.
     """
 
     text = request.lower()
 
     complex_terms = (
-
         "production",
-
         "full stack",
         "full-stack",
-
         "saas",
-
         "microservice",
-
         "multi agent",
         "multi-agent",
-
         "authentication",
-
         "payment",
-
         "database",
-
         "deploy",
         "deployment",
-
         "ai platform",
-
         "ecommerce",
-        "e-commerce"
+        "e-commerce",
     )
 
     for term in complex_terms:
@@ -86,9 +76,7 @@ def detect_complexity(
 
 
 @router.post("/run-company")
-async def run_company(
-    data: ProjectRequest
-):
+async def run_company(data: ProjectRequest):
 
     # --------------------------------
     # 1. DETERMINE COMPLEXITY
@@ -106,18 +94,27 @@ async def run_company(
 
 
     # --------------------------------
-    # 2. RUN APPROPRIATE CREW
+    # 2. INITIALIZE OUTPUTS
     # --------------------------------
 
     research_output = ""
-
+    architecture_output = ""
     coding_output = ""
+    testing_output = ""
+    debugging_output = ""
+    manager_review = ""
 
+    retry_count = 0
+
+
+    # --------------------------------
+    # 3. INITIAL CODE GENERATION
+    # --------------------------------
 
     if complexity == "simple":
 
-        # ONLY CODING AGENT
-        # 1 LLM CALL
+        # Simple:
+        # Coding only
 
         crew = build_coding_crew()
 
@@ -127,21 +124,21 @@ async def run_company(
                 data.project_request,
 
                 "research_output":
-                ""
+                "",
             }
         )
 
         if result.tasks_output:
 
             coding_output = str(
-                result.tasks_output[0]
+                result.tasks_output[-1]
             )
 
 
     else:
 
-        # RESEARCH + CODING
-        # 2 LLM CALLS
+        # Complex:
+        # Research → Architecture → Coding
 
         crew = build_research_coding_crew()
 
@@ -154,23 +151,27 @@ async def run_company(
 
         task_outputs = result.tasks_output
 
-
         if len(task_outputs) >= 1:
 
             research_output = str(
                 task_outputs[0]
             )
 
-
         if len(task_outputs) >= 2:
 
-            coding_output = str(
+            architecture_output = str(
                 task_outputs[1]
+            )
+
+        if len(task_outputs) >= 3:
+
+            coding_output = str(
+                task_outputs[2]
             )
 
 
     # --------------------------------
-    # 3. PARSE GENERATED FILES
+    # 4. PARSE GENERATED FILES
     # --------------------------------
 
     generated_files = parse_files(
@@ -179,13 +180,14 @@ async def run_company(
 
 
     # --------------------------------
-    # 4. LOCAL VALIDATION
+    # 5. LOCAL VALIDATION
+    #
+    # NO LLM CALL
     # --------------------------------
 
     validation = validate_generated_files(
         generated_files
     )
-
 
     validation_summary = (
         compact_validation_summary(
@@ -195,25 +197,185 @@ async def run_company(
 
 
     # --------------------------------
-    # 5. MANAGER ONLY WHEN NECESSARY
+    # 6. TEST + DEBUG LOOP
     # --------------------------------
 
-    manager_review = ""
+    if complexity == "complex":
+
+        while retry_count <= MAX_RETRIES:
+
+            # ----------------------------
+            # Run Testing Agent
+            # ----------------------------
+
+            if validation["status"] == "PASS":
+
+                testing_crew = (
+                    build_testing_crew()
+                )
+
+                testing_result = (
+                    testing_crew.kickoff(
+                        inputs={
+                            "project_request":
+                            data.project_request,
+
+                            "coding_output":
+                            coding_output,
+                        }
+                    )
+                )
+
+                if testing_result.tasks_output:
+
+                    testing_output = str(
+                        testing_result.tasks_output[-1]
+                    )
 
 
-    should_review = (
+            # ----------------------------
+            # Determine whether problems
+            # exist
+            # ----------------------------
 
-        data.review
+            validation_failed = (
+                validation["status"] == "FAIL"
+            )
 
-        or
+            testing_failed = (
+                testing_output
+                and any(
+                    word in testing_output.lower()
+                    for word in [
+                        "fail",
+                        "error",
+                        "bug",
+                        "broken",
+                        "invalid",
+                    ]
+                )
+            )
 
-        validation["status"] == "FAIL"
-    )
+
+            # ----------------------------
+            # Everything looks good
+            # ----------------------------
+
+            if not validation_failed and not testing_failed:
+
+                break
 
 
-    if should_review:
+            # ----------------------------
+            # Maximum retry reached
+            # ----------------------------
 
-        manager_crew = build_manager_crew()
+            if retry_count >= MAX_RETRIES:
+
+                break
+
+
+            retry_count += 1
+
+
+            # ----------------------------
+            # Debugging Agent
+            # ----------------------------
+
+            debugging_crew = (
+                build_debugging_crew()
+            )
+
+            debugging_result = (
+                debugging_crew.kickoff(
+                    inputs={
+                        "project_request":
+                        data.project_request,
+
+                        "coding_output":
+                        coding_output,
+
+                        "validation_summary":
+                        validation_summary,
+
+                        "testing_output":
+                        testing_output,
+                    }
+                )
+            )
+
+            if debugging_result.tasks_output:
+
+                debugging_output = str(
+                    debugging_result.tasks_output[-1]
+                )
+
+
+            # ----------------------------
+            # Coding Fix Agent
+            # ----------------------------
+
+            coding_fix_crew = (
+                build_coding_fix_crew()
+            )
+
+            coding_fix_result = (
+                coding_fix_crew.kickoff(
+                    inputs={
+                        "project_request":
+                        data.project_request,
+
+                        "coding_output":
+                        coding_output,
+
+                        "debugging_output":
+                        debugging_output,
+                    }
+                )
+            )
+
+            if coding_fix_result.tasks_output:
+
+                coding_output = str(
+                    coding_fix_result.tasks_output[-1]
+                )
+
+
+            # ----------------------------
+            # Parse corrected files
+            # ----------------------------
+
+            generated_files = parse_files(
+                coding_output
+            )
+
+
+            # ----------------------------
+            # Local validation again
+            # ----------------------------
+
+            validation = (
+                validate_generated_files(
+                    generated_files
+                )
+            )
+
+            validation_summary = (
+                compact_validation_summary(
+                    validation
+                )
+            )
+
+
+    # --------------------------------
+    # 7. OPTIONAL MANAGER REVIEW
+    # --------------------------------
+
+    if data.review:
+
+        manager_crew = (
+            build_manager_crew()
+        )
 
         manager_result = (
             manager_crew.kickoff(
@@ -222,41 +384,58 @@ async def run_company(
                     data.project_request,
 
                     "validation_summary":
-                    validation_summary
+                    validation_summary,
                 }
             )
         )
 
-
         if manager_result.tasks_output:
 
             manager_review = str(
-                manager_result.tasks_output[0]
+                manager_result.tasks_output[-1]
             )
 
 
     # --------------------------------
-    # 6. RETURN RESPONSE
+    # 8. RETURN RESPONSE
     # --------------------------------
 
     return {
 
-        "status": "success",
+        "status":
+        "success",
 
-        "complexity": complexity,
+        "complexity":
+        complexity,
 
-        "research": research_output,
+        "research":
+        research_output,
 
-        "code": coding_output,
+        "architecture":
+        architecture_output,
 
-        "files": generated_files,
+        "code":
+        coding_output,
 
-        "validation": validation,
+        "testing":
+        testing_output,
+
+        "debugging":
+        debugging_output,
+
+        "files":
+        generated_files,
+
+        "validation":
+        validation,
+
+        "retry_count":
+        retry_count,
 
         "manager_review":
         manager_review,
 
         # Frontend compatibility
         "review":
-        manager_review
+        manager_review,
     }

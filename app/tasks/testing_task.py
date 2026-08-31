@@ -5,37 +5,35 @@ from app.agents.testing_agent import testing_agent
 
 testing_task = Task(
     description="""
-    Analyze the generated software project and design appropriate
-    test cases.
+    Analyze the generated software project and create a focused
+    testing report.
 
     PROJECT REQUEST:
     {project_request}
 
-    ARCHITECTURE:
-    {architecture_output}
-
     GENERATED CODE:
     {coding_output}
 
-    Create tests that verify:
+    Check:
     1. Core functionality
-    2. API behavior where applicable
-    3. Important edge cases
+    2. Important API behavior
+    3. Edge cases
     4. Invalid inputs
-    5. Expected failures
+    5. Potential runtime problems
 
-    Do not rewrite the application code.
-    Focus only on testing.
+    Do not rewrite the application.
+    Keep the testing report concise.
     """,
 
     expected_output="""
-    A concise testing plan containing:
+    A concise test report containing:
     - Test cases
-    - Expected results
-    - Important edge cases
     - Potential failures
+    - Important issues
+    - Overall testing status
     """,
 
     agent=testing_agent
 )
+
 

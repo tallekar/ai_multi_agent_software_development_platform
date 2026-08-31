@@ -1,6 +1,6 @@
-
 from crewai import Task
 from app.agents.architecture_agent import architecture_agent
+from app.tasks.research_task import research_task
 
 
 architecture_task = Task(
@@ -10,8 +10,7 @@ architecture_task = Task(
     PROJECT REQUEST:
     {project_request}
 
-    TECHNICAL RESEARCH:
-    {research_output}
+    Use the research findings from the Research Agent.
 
     Provide:
     1. Application architecture
@@ -33,6 +32,6 @@ architecture_task = Task(
     - Technologies
     """,
 
-    agent=architecture_agent
+    agent=architecture_agent,
+    context=[research_task]
 )
-
