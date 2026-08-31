@@ -1,28 +1,34 @@
 from crewai import Task
 from app.agents.manager_agent import manager_agent
 
+
 manager_task = Task(
     description="""
-    Review this project briefly:
+    Analyze the following software development request:
 
     {project_request}
 
-    STRICT RULES:
-    - Maximum 50 words
-    - Keep it simple
-    - Beginner-friendly language
+    Determine which specialized development activities are required.
 
-    FORMAT:
+    Available agents:
+    - Research Agent
+    - Architecture Agent
+    - Coding Agent
+    - Testing Agent
+    - Debugging Agent
+    - Code Review Agent
 
-    STRENGTHS:
-    - ...
+    Create a short execution plan specifying:
+    1. Required agents
+    2. Order of execution
+    3. Whether testing is required
+    4. Whether code review is required
 
-    IMPROVEMENTS:
-    - ...
+    Do not generate code.
     """,
 
     expected_output="""
-    Short simple review.
+    A concise software development execution plan.
     """,
 
     agent=manager_agent
