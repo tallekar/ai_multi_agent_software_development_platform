@@ -94,15 +94,32 @@ def build_coding_fix_crew():
     """
     Coding Fix path.
 
-    Debugging report
-        ↓
-    Coding Agent
-        ↓
-    Corrected code
+    Uses existing generated code
+    and debugging report.
     """
     return Crew(
         agents=[coding_agent],
         tasks=[coding_fix_task],
+        process=Process.sequential,
+        verbose=False
+    )
+
+
+def build_code_review_crew():
+    """
+    Code Review-only path.
+
+    Reviews the already generated project.
+
+    Does NOT run:
+    Research
+    Architecture
+    Coding
+    Testing
+    """
+    return Crew(
+        agents=[code_review_agent],
+        tasks=[code_review_task],
         process=Process.sequential,
         verbose=False
     )
@@ -152,4 +169,3 @@ def build_manager_crew():
         process=Process.sequential,
         verbose=False
     )
-

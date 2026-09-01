@@ -10,6 +10,7 @@ from app.crew.crew_setup import (
     build_testing_crew,
     build_debugging_crew,
     build_coding_fix_crew,
+    build_code_review_crew,
     build_manager_crew,
 )
 
@@ -68,7 +69,6 @@ def detect_complexity(request: str) -> str:
     )
 
     for term in complex_terms:
-
         if term in text:
             return "complex"
 
@@ -83,13 +83,10 @@ async def run_company(data: ProjectRequest):
     # --------------------------------
 
     if data.complexity == "auto":
-
         complexity = detect_complexity(
             data.project_request
         )
-
     else:
-
         complexity = data.complexity
 
 
@@ -102,6 +99,7 @@ async def run_company(data: ProjectRequest):
     coding_output = ""
     testing_output = ""
     debugging_output = ""
+    code_review_output = ""
     manager_review = ""
 
     retry_count = 0
@@ -113,18 +111,15 @@ async def run_company(data: ProjectRequest):
 
     if complexity == "simple":
 
-        # Simple:
-        # Coding only
-
         crew = build_coding_crew()
 
         result = crew.kickoff(
             inputs={
                 "project_request":
-                data.project_request,
+                    data.project_request,
 
                 "research_output":
-                "",
+                    "",
             }
         )
 
@@ -134,10 +129,8 @@ async def run_company(data: ProjectRequest):
                 result.tasks_output[-1]
             )
 
-
     else:
 
-        # Complex:
         # Research → Architecture → Coding
 
         crew = build_research_coding_crew()
@@ -145,7 +138,7 @@ async def run_company(data: ProjectRequest):
         result = crew.kickoff(
             inputs={
                 "project_request":
-                data.project_request
+                    data.project_request
             }
         )
 
@@ -197,16 +190,18 @@ async def run_company(data: ProjectRequest):
 
 
     # --------------------------------
-    # 6. TEST + DEBUG LOOP
+    # 6. TEST + DEBUG + FIX LOOP
+    #
+    # Maximum 2 fix attempts
     # --------------------------------
 
     if complexity == "complex":
 
-        while retry_count <= MAX_RETRIES:
+        while retry_count < MAX_RETRIES:
 
-            # ----------------------------
-            # Run Testing Agent
-            # ----------------------------
+            # --------------------------------
+            # TESTING
+            # --------------------------------
 
             if validation["status"] == "PASS":
 
@@ -218,10 +213,10 @@ async def run_company(data: ProjectRequest):
                     testing_crew.kickoff(
                         inputs={
                             "project_request":
-                            data.project_request,
+                                data.project_request,
 
                             "coding_output":
-                            coding_output,
+                                coding_output,
                         }
                     )
                 )
@@ -232,19 +227,24 @@ async def run_company(data: ProjectRequest):
                         testing_result.tasks_output[-1]
                     )
 
+            else:
 
-            # ----------------------------
-            # Determine whether problems
-            # exist
-            # ----------------------------
+                testing_output = ""
+
+
+            # --------------------------------
+            # CHECK FOR PROBLEMS
+            # --------------------------------
 
             validation_failed = (
                 validation["status"] == "FAIL"
             )
 
-            testing_failed = (
-                testing_output
-                and any(
+            testing_failed = False
+
+            if testing_output:
+
+                testing_failed = any(
                     word in testing_output.lower()
                     for word in [
                         "fail",
@@ -254,33 +254,22 @@ async def run_company(data: ProjectRequest):
                         "invalid",
                     ]
                 )
-            )
 
 
-            # ----------------------------
-            # Everything looks good
-            # ----------------------------
+            # --------------------------------
+            # EVERYTHING PASSED
+            # --------------------------------
 
-            if not validation_failed and not testing_failed:
-
+            if (
+                not validation_failed
+                and not testing_failed
+            ):
                 break
 
 
-            # ----------------------------
-            # Maximum retry reached
-            # ----------------------------
-
-            if retry_count >= MAX_RETRIES:
-
-                break
-
-
-            retry_count += 1
-
-
-            # ----------------------------
-            # Debugging Agent
-            # ----------------------------
+            # --------------------------------
+            # DEBUGGING
+            # --------------------------------
 
             debugging_crew = (
                 build_debugging_crew()
@@ -290,16 +279,16 @@ async def run_company(data: ProjectRequest):
                 debugging_crew.kickoff(
                     inputs={
                         "project_request":
-                        data.project_request,
+                            data.project_request,
 
                         "coding_output":
-                        coding_output,
+                            coding_output,
 
                         "validation_summary":
-                        validation_summary,
+                            validation_summary,
 
                         "testing_output":
-                        testing_output,
+                            testing_output,
                     }
                 )
             )
@@ -311,9 +300,9 @@ async def run_company(data: ProjectRequest):
                 )
 
 
-            # ----------------------------
-            # Coding Fix Agent
-            # ----------------------------
+            # --------------------------------
+            # CODING FIX
+            # --------------------------------
 
             coding_fix_crew = (
                 build_coding_fix_crew()
@@ -323,13 +312,13 @@ async def run_company(data: ProjectRequest):
                 coding_fix_crew.kickoff(
                     inputs={
                         "project_request":
-                        data.project_request,
+                            data.project_request,
 
                         "coding_output":
-                        coding_output,
+                            coding_output,
 
                         "debugging_output":
-                        debugging_output,
+                            debugging_output,
                     }
                 )
             )
@@ -341,18 +330,27 @@ async def run_company(data: ProjectRequest):
                 )
 
 
-            # ----------------------------
-            # Parse corrected files
-            # ----------------------------
+            # --------------------------------
+            # INCREASE RETRY COUNT
+            # --------------------------------
+
+            retry_count += 1
+
+
+            # --------------------------------
+            # PARSE CORRECTED FILES
+            # --------------------------------
 
             generated_files = parse_files(
                 coding_output
             )
 
 
-            # ----------------------------
-            # Local validation again
-            # ----------------------------
+            # --------------------------------
+            # LOCAL VALIDATION AGAIN
+            #
+            # NO LLM CALL
+            # --------------------------------
 
             validation = (
                 validate_generated_files(
@@ -368,7 +366,80 @@ async def run_company(data: ProjectRequest):
 
 
     # --------------------------------
-    # 7. OPTIONAL MANAGER REVIEW
+    # 7. FINAL TEST
+    # --------------------------------
+
+    if (
+        complexity == "complex"
+        and validation["status"] == "PASS"
+    ):
+
+        testing_crew = (
+            build_testing_crew()
+        )
+
+        testing_result = (
+            testing_crew.kickoff(
+                inputs={
+                    "project_request":
+                        data.project_request,
+
+                    "coding_output":
+                        coding_output,
+                }
+            )
+        )
+
+        if testing_result.tasks_output:
+
+            testing_output = str(
+                testing_result.tasks_output[-1]
+            )
+
+
+    # --------------------------------
+    # 8. CODE REVIEW
+    #
+    # One LLM call only.
+    # Reviews existing generated code.
+    # --------------------------------
+
+    if (
+        complexity == "complex"
+        and validation["status"] == "PASS"
+    ):
+
+        code_review_crew = (
+            build_code_review_crew()
+        )
+
+        code_review_result = (
+            code_review_crew.kickoff(
+                inputs={
+                    "project_request":
+                        data.project_request,
+
+                    "coding_output":
+                        coding_output,
+
+                    "validation_summary":
+                        validation_summary,
+
+                    "debugging_output":
+                        debugging_output,
+                }
+            )
+        )
+
+        if code_review_result.tasks_output:
+
+            code_review_output = str(
+                code_review_result.tasks_output[-1]
+            )
+
+
+    # --------------------------------
+    # 9. OPTIONAL MANAGER REVIEW
     # --------------------------------
 
     if data.review:
@@ -381,10 +452,10 @@ async def run_company(data: ProjectRequest):
             manager_crew.kickoff(
                 inputs={
                     "project_request":
-                    data.project_request,
+                        data.project_request,
 
                     "validation_summary":
-                    validation_summary,
+                        validation_summary,
                 }
             )
         )
@@ -397,45 +468,46 @@ async def run_company(data: ProjectRequest):
 
 
     # --------------------------------
-    # 8. RETURN RESPONSE
+    # 10. RETURN RESPONSE
     # --------------------------------
 
     return {
-
-        "status":
-        "success",
+        "status": "success",
 
         "complexity":
-        complexity,
+            complexity,
 
         "research":
-        research_output,
+            research_output,
 
         "architecture":
-        architecture_output,
+            architecture_output,
 
         "code":
-        coding_output,
+            coding_output,
 
         "testing":
-        testing_output,
+            testing_output,
 
         "debugging":
-        debugging_output,
+            debugging_output,
+
+        "code_review":
+            code_review_output,
 
         "files":
-        generated_files,
+            generated_files,
 
         "validation":
-        validation,
+            validation,
 
         "retry_count":
-        retry_count,
+            retry_count,
 
         "manager_review":
-        manager_review,
+            manager_review,
 
         # Frontend compatibility
         "review":
-        manager_review,
+            manager_review,
     }
