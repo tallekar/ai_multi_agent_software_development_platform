@@ -14,6 +14,9 @@ coding_fix_task = Task(
     EXISTING GENERATED CODE:
     {coding_output}
 
+    REAL PROJECT PATH:
+    {project_path}
+
     DEBUGGING REPORT:
     {debugging_output}
 
@@ -27,15 +30,21 @@ coding_fix_task = Task(
     4. Do not add unnecessary features.
     5. Return the complete corrected files.
     6. Preserve files that do not require changes.
-    7. Make sure the corrected code is syntactically valid.
-    8. Use this format for every file:
+     7. If the existing project has frontend and backend parts, return both
+         parts in the corrected output, including unchanged files.
+         Do not collapse a full-stack project into one file.
+     8. Make sure the corrected code is syntactically valid.
+     8. Use exactly this format for every file, including END_FILE:
 
-       FILE: filename.py
+         FILE: path/to/filename.py
 
        <complete corrected code>
+         END_FILE
 
-    9. Do not explain the code.
-    10. Do not include unnecessary text.
+    10. Do not explain the code.
+    11. Do not include unnecessary text.
+    12. The backend writes your returned FILE blocks into REAL PROJECT PATH.
+        Only return files that belong inside that generated project.
     """,
 
     expected_output="""

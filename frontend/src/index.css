@@ -13,6 +13,13 @@ body,
 }
 
 body {
-  background: #020617;
-  font-family: Arial, sans-serif;
+  background: #07111f;
+  color: #e5edf5;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+}
+
+button,
+textarea,
+select {
+  font: inherit;
 }

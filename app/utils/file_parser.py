@@ -1,22 +1,20 @@
 import re
 
 
-FILE_PATTERN = re.compile(
-    r"FILE:\s*(.*?)\s*```[^\n]*\n(.*?)```",
-    re.DOTALL
+FILE_BLOCK_PATTERN = re.compile(
+    r"^[ \t]*FILE:[ \t]*(?P<path>[^\r\n]+)[ \t]*\r?\n"
+    r"(?P<content>.*?)"
+    r"(?:\r?\n)?^[ \t]*END_FILE[ \t]*$",
+    re.MULTILINE | re.DOTALL,
 )
 
 
 def parse_files(text: str) -> dict[str, str]:
-
     files = {}
 
-    matches = FILE_PATTERN.findall(
-        text or ""
-    )
-
-    for filename, content in matches:
-
-        files[filename.strip()] = content.strip()
+    for match in FILE_BLOCK_PATTERN.finditer(text or ""):
+        filename = match.group("path").strip()
+        if filename:
+            files[filename] = match.group("content")
 
     return files

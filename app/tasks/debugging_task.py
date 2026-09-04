@@ -14,11 +14,17 @@ debugging_task = Task(
     GENERATED CODE:
     {coding_output}
 
+    REAL PROJECT PATH:
+    {project_path}
+
     VALIDATION RESULTS:
     {validation_summary}
 
     TESTING RESULTS:
     {testing_output}
+
+    The testing results include the real pytest output and traceback from
+    the generated project. Base the diagnosis on those concrete failures.
 
     Your job is to identify the exact problems and provide
     actionable fixes for the Coding Agent.

@@ -1,7 +1,8 @@
 
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.crew.crew_setup import (
@@ -15,6 +16,13 @@ from app.crew.crew_setup import (
 )
 
 from app.utils.file_parser import parse_files
+from app.utils.test_runner import run_project_tests
+from app.utils.project_writer import (
+    PROJECTS_ROOT,
+    create_project_zip,
+    update_project,
+    write_project,
+)
 
 from app.utils.validation import (
     validate_generated_files,
@@ -27,6 +35,23 @@ router = APIRouter()
 
 # Maximum number of debugging/fixing attempts
 MAX_RETRIES = 2
+
+
+@router.get("/projects/{project_id}/download")
+def download_project(project_id: str):
+    try:
+        archive = create_project_zip(project_id, PROJECTS_ROOT)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+    return StreamingResponse(
+        archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition":
+            f'attachment; filename="{project_id}.zip"'
+        },
+    )
 
 
 class ProjectRequest(BaseModel):
@@ -171,6 +196,22 @@ async def run_company(data: ProjectRequest):
         coding_output
     )
 
+    try:
+        project = write_project(
+            generated_files,
+            project_request=data.project_request,
+            architecture=architecture_output,
+        )
+        project["download_url"] = (
+            f"/projects/{project['project_id']}/download"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    test_result = run_project_tests(project["project_path"])
+    test_attempts = [test_result]
+    fixes_applied = []
+
 
     # --------------------------------
     # 5. LOCAL VALIDATION
@@ -195,15 +236,13 @@ async def run_company(data: ProjectRequest):
     # Maximum 2 fix attempts
     # --------------------------------
 
-    if complexity == "complex":
-
-        while retry_count < MAX_RETRIES:
+    while retry_count < MAX_RETRIES:
 
             # --------------------------------
             # TESTING
             # --------------------------------
 
-            if validation["status"] == "PASS":
+            if complexity == "complex" and validation["status"] == "PASS":
 
                 testing_crew = (
                     build_testing_crew()
@@ -236,34 +275,15 @@ async def run_company(data: ProjectRequest):
             # CHECK FOR PROBLEMS
             # --------------------------------
 
-            validation_failed = (
-                validation["status"] == "FAIL"
-            )
+            validation_failed = validation["status"] == "FAIL"
 
-            testing_failed = False
-
-            if testing_output:
-
-                testing_failed = any(
-                    word in testing_output.lower()
-                    for word in [
-                        "fail",
-                        "error",
-                        "bug",
-                        "broken",
-                        "invalid",
-                    ]
-                )
-
+            testing_failed = test_result["status"] == "FAIL"
 
             # --------------------------------
             # EVERYTHING PASSED
             # --------------------------------
 
-            if (
-                not validation_failed
-                and not testing_failed
-            ):
+            if not validation_failed and not testing_failed:
                 break
 
 
@@ -284,11 +304,14 @@ async def run_company(data: ProjectRequest):
                         "coding_output":
                             coding_output,
 
+                        "project_path":
+                            project["project_path"],
+
                         "validation_summary":
                             validation_summary,
 
                         "testing_output":
-                            testing_output,
+                            test_result["output"],
                     }
                 )
             )
@@ -319,6 +342,9 @@ async def run_company(data: ProjectRequest):
 
                         "debugging_output":
                             debugging_output,
+
+                        "project_path":
+                            project["project_path"],
                     }
                 )
             )
@@ -345,6 +371,23 @@ async def run_company(data: ProjectRequest):
                 coding_output
             )
 
+            fixes_applied.append({
+                "attempt": retry_count,
+                "files": list(generated_files.keys()),
+            })
+
+            try:
+                project = update_project(
+                    project["project_path"],
+                    generated_files,
+                    architecture=architecture_output,
+                )
+                project["download_url"] = (
+                    f"/projects/{project['project_id']}/download"
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
 
             # --------------------------------
             # LOCAL VALIDATION AGAIN
@@ -364,6 +407,9 @@ async def run_company(data: ProjectRequest):
                 )
             )
 
+            test_result = run_project_tests(project["project_path"])
+            test_attempts.append(test_result)
+
 
     # --------------------------------
     # 7. FINAL TEST
@@ -372,6 +418,7 @@ async def run_company(data: ProjectRequest):
     if (
         complexity == "complex"
         and validation["status"] == "PASS"
+        and test_result["status"] == "PASS"
     ):
 
         testing_crew = (
@@ -407,6 +454,7 @@ async def run_company(data: ProjectRequest):
     if (
         complexity == "complex"
         and validation["status"] == "PASS"
+        and test_result["status"] == "PASS"
     ):
 
         code_review_crew = (
@@ -489,6 +537,18 @@ async def run_company(data: ProjectRequest):
         "testing":
             testing_output,
 
+        "test_status":
+            test_result["status"],
+
+        "test_attempts":
+            test_attempts,
+
+        "fixes_applied":
+            fixes_applied,
+
+        "remaining_errors":
+            test_result["output"] if test_result["status"] == "FAIL" else "",
+
         "debugging":
             debugging_output,
 
@@ -497,6 +557,27 @@ async def run_company(data: ProjectRequest):
 
         "files":
             generated_files,
+
+        "project_name":
+            project["project_name"],
+
+        "project_path":
+            project["project_path"],
+
+        "generated_files":
+            project["generated_files"],
+
+        "file_count":
+            project["file_count"],
+
+        "manifest_path":
+            project["manifest_path"],
+
+        "generation_status":
+            "success",
+
+        "project":
+            project,
 
         "validation":
             validation,

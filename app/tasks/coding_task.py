@@ -18,6 +18,10 @@ coding_task = Task(
     If this is a NEW project:
     - Generate the required working project files.
     - Follow the architecture provided by the Architecture Agent.
+        - Unless the request explicitly asks for a single-file script, generate
+            both a backend and a frontend as separate parts of the project.
+        - Unless the request explicitly asks for a single-file script, generate
+            both a backend and a frontend as separate parts of the project.
 
     If this is a FIX request:
     - Review the existing generated code.
@@ -30,19 +34,27 @@ coding_task = Task(
     1. Generate real working code.
     2. Keep the implementation focused on the user's request.
     3. Do not add unnecessary features.
-    4. Generate all important files required to run the project.
-    5. For every file, use this format:
+     4. Generate all important files required to run the project.
+     5. For a full-stack request, include at least:
+         - backend/main.py (or the backend entry point)
+         - backend/requirements.txt
+         - frontend/package.json
+         - frontend/index.html
+         - frontend/src/App.jsx (or the frontend entry point)
+         Do not combine frontend and backend into one file.
+     5. For every file, use exactly this format, including END_FILE:
 
-       FILE: filename.py
+         FILE: path/to/filename.py
 
-       Then write the complete code for that file.
+         <complete file content>
+         END_FILE
 
-    6. You can generate multiple files.
-    7. Do not explain the code.
-    8. Do not write unnecessary text.
-    9. Keep the generated code concise.
-    10. Make sure the generated code is syntactically correct.
-    11. When fixing code, preserve all functionality that is already working.
+    7. You can generate multiple files.
+    8. Do not explain the code.
+    9. Do not write unnecessary text.
+    10. Keep the generated code concise.
+    11. Make sure the generated code is syntactically correct.
+    12. When fixing code, preserve all functionality that is already working.
     """,
 
     expected_output="""

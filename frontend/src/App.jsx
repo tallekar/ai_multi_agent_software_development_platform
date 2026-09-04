@@ -1,864 +1,404 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
+import "./App.css";
 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 function App() {
-
   const [text, setText] = useState("");
-
   const [research, setResearch] = useState("");
-
+  const [architecture, setArchitecture] = useState("");
   const [code, setCode] = useState("");
-
+  const [testing, setTesting] = useState("");
+  const [debugging, setDebugging] = useState("");
+  const [codeReview, setCodeReview] = useState("");
+  const [validation, setValidation] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [review, setReview] = useState("");
-
   const [loading, setLoading] = useState(false);
-
   const [activeTab, setActiveTab] = useState("code");
 
-  // NEW: optimization settings
+  // Optimization settings
   const [complexity, setComplexity] = useState("auto");
-
   const [reviewRequested, setReviewRequested] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState("");
+  const [projectName, setProjectName] = useState("");
 
+  // Theme state: 'dark' | 'light'
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("theme") || "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
 
   // SAFE STREAM FUNCTION
   const streamText = (text = "", setter) => {
-
     if (!text) {
       setter("No response received");
       return;
     }
-
     setter("");
-
     let index = 0;
-
     const interval = setInterval(() => {
-
       setter((prev) => prev + text[index]);
-
       index++;
-
       if (index >= text.length) {
         clearInterval(interval);
       }
-
     }, 1);
   };
 
-
   // RUN AI
   const runAI = async () => {
-
     if (!text.trim()) {
       alert("Please describe your project first.");
       return;
     }
 
     try {
-
       setLoading(true);
-
       setResearch("");
-
+      setArchitecture("");
       setCode("");
-
+      setTesting("");
+      setDebugging("");
+      setCodeReview("");
+      setValidation(null);
+      setRetryCount(0);
       setReview("");
+      setDownloadUrl("");
+      setProjectName("");
 
+      const response = await axios.post("http://127.0.0.1:8000/run-company", {
+        project_request: text,
+        complexity: complexity,
+        review: reviewRequested
+      });
 
-      const response = await axios.post(
-        "http://127.0.0.1:8000/run-company",
-        {
-          project_request: text,
-          complexity: complexity,
-          review: reviewRequested
-        }
+      const project = response.data?.project || {};
+      setDownloadUrl(
+        response.data?.download_url ||
+          project.download_url ||
+          (project.project_id
+            ? `/projects/${project.project_id}/download`
+            : "")
+      );
+      setProjectName(
+        response.data?.project_name ||
+          project.project_name ||
+          project.project_id ||
+          "generated-project"
       );
 
-
-      console.log(response.data);
-
-
-      // Research
+      streamText(response.data?.research || "", setResearch);
+      streamText(response.data?.architecture || "", setArchitecture);
+      streamText(response.data?.code || "", setCode);
+      streamText(response.data?.testing || "", setTesting);
+      streamText(response.data?.debugging || "", setDebugging);
+      streamText(response.data?.code_review || "", setCodeReview);
+      setValidation(response.data?.validation || null);
+      setRetryCount(response.data?.retry_count || 0);
       streamText(
-        response.data?.research || "",
-        setResearch
-      );
-
-
-      // Generated code
-      streamText(
-        response.data?.code || "",
-        setCode
-      );
-
-
-      // Manager review
-      streamText(
-        response.data?.manager_review ||
-        response.data?.review ||
-        "",
+        response.data?.manager_review || response.data?.review || "",
         setReview
       );
-
-
     } catch (error) {
-
       console.error(error);
-
       setResearch("Error generating research");
-
+      setArchitecture("Error generating architecture");
       setCode("Error generating code");
-
+      setTesting("Error generating testing result");
+      setDebugging("Error generating debugging result");
+      setCodeReview("Error generating code review");
+      setValidation(null);
       setReview("Error generating review");
-
-
     } finally {
-
       setLoading(false);
-
     }
   };
 
-
-  // COPY CODE
   const copyCode = () => {
-
     navigator.clipboard.writeText(code);
-
     alert("Code copied!");
-
   };
 
-
-  // TAB STYLE
-  const tabStyle = (active) => ({
-    padding: "12px 24px",
-
-    borderRadius: "14px",
-
-    border: active
-      ? "1px solid #3b82f6"
-      : "1px solid rgba(255,255,255,0.08)",
-
-    cursor: "pointer",
-
-    background: active
-      ? "linear-gradient(135deg,#2563eb,#3b82f6)"
-      : "rgba(255,255,255,0.04)",
-
-    color: "white",
-
-    fontWeight: "600",
-
-    transition: "0.3s"
-  });
-
-
-  // CARD STYLE
-  const cardStyle = {
-    background: "rgba(255,255,255,0.04)",
-
-    padding: "18px",
-
-    borderRadius: "18px",
-
-    border: "1px solid rgba(255,255,255,0.06)"
-  };
-
+  const tabs = [
+    { id: "research", label: "Research", icon: "🔍" },
+    { id: "architecture", label: "Architecture", icon: "🏗️" },
+    { id: "code", label: "Code", icon: "💻" },
+    { id: "testing", label: "Testing", icon: "🧪" },
+    { id: "debugging", label: "Debugging", icon: "🐛" },
+    { id: "code_review", label: "Code Review", icon: "🔎" },
+    { id: "validation", label: "Validation", icon: "✅" },
+    { id: "review", label: "Manager", icon: "📋" }
+  ];
 
   return (
-
-    <div
-      style={{
-        minHeight: "100vh",
-
-        display: "flex",
-
-        background:
-          "linear-gradient(135deg,#020617,#0f172a,#111827)",
-
-        color: "white",
-
-        fontFamily: "Arial"
-      }}
-    >
-
+    <div className="app-shell">
       {/* SIDEBAR */}
-
-      <div
-        style={{
-          width: "320px",
-
-          background: "rgba(15,23,42,0.85)",
-
-          backdropFilter: "blur(20px)",
-
-          borderRight:
-            "1px solid rgba(255,255,255,0.08)",
-
-          padding: "30px",
-
-          display: "flex",
-
-          flexDirection: "column",
-
-          justifyContent: "space-between"
-        }}
-      >
-
+      <aside className="app-sidebar">
         <div>
-
-          <h1
-            style={{
-              fontSize: "34px",
-
-              fontWeight: "bold",
-
-              marginBottom: "12px",
-
-              background:
-                "linear-gradient(to right,#ffffff,#60a5fa)",
-
-              WebkitBackgroundClip: "text",
-
-              WebkitTextFillColor: "transparent"
-            }}
-          >
-            AI Company
-          </h1>
-
-
-          <p
-            style={{
-              color: "#94a3b8",
-
-              lineHeight: "1.7",
-
-              marginBottom: "40px"
-            }}
-          >
-            Multi-Agent Software Engineering Platform
-          </p>
-
-
-          {/* DASHBOARD */}
-
-          <h2
-            style={{
-              marginBottom: "20px",
-
-              fontSize: "20px"
-            }}
-          >
-            📊 Agent Dashboard
-          </h2>
-
-
-          <div
-            style={{
-              display: "flex",
-
-              flexDirection: "column",
-
-              gap: "18px"
-            }}
-          >
-
-            {/* RESEARCH */}
-
-            <div style={cardStyle}>
-
-              <h3>🧠 Research Agent</h3>
-
-              <p style={{ color: "#94a3b8" }}>
-                Status: 🟢 Active
-              </p>
-
-              <p style={{ color: "#94a3b8" }}>
-                Tasks Completed: 24
-              </p>
-
-
-              <div
-                style={{
-                  height: "8px",
-
-                  background: "#1e293b",
-
-                  borderRadius: "10px",
-
-                  overflow: "hidden",
-
-                  marginTop: "12px"
-                }}
-              >
-
-                <div
-                  style={{
-                    width: "88%",
-
-                    height: "100%",
-
-                    background: "#22c55e"
-                  }}
-                />
-
-              </div>
-
+          <div className="brand-header">
+            <div className="brand-title-wrap">
+              <span className="brand-icon">⚡</span>
+              <h1 className="brand-title">AI Company</h1>
             </div>
+            <p className="brand-subtitle">
+              Multi-Agent Software Engineering Platform
+            </p>
+          </div>
 
+          <div className="section-header">
+            <h2>📊 Agent Dashboard</h2>
+          </div>
+
+          <div className="dashboard-cards">
+            {/* RESEARCH */}
+            <div className="agent-card">
+              <div className="agent-card-header">
+                <h3>🧠 Research Agent</h3>
+                <span className="status-badge status-active">Active</span>
+              </div>
+              <p className="agent-meta">Tasks Completed: 24</p>
+              <div className="progress-bar-bg">
+                <div className="progress-bar-fill" style={{ width: "88%", background: "var(--success)" }} />
+              </div>
+            </div>
 
             {/* CODING */}
-
-            <div style={cardStyle}>
-
-              <h3>💻 Coding Agent</h3>
-
-              <p style={{ color: "#94a3b8" }}>
-                Status: 🟢 Running
-              </p>
-
-              <p style={{ color: "#94a3b8" }}>
-                Code Accuracy: 94%
-              </p>
-
-
-              <div
-                style={{
-                  height: "8px",
-
-                  background: "#1e293b",
-
-                  borderRadius: "10px",
-
-                  overflow: "hidden",
-
-                  marginTop: "12px"
-                }}
-              >
-
-                <div
-                  style={{
-                    width: "94%",
-
-                    height: "100%",
-
-                    background: "#3b82f6"
-                  }}
-                />
-
+            <div className="agent-card">
+              <div className="agent-card-header">
+                <h3>💻 Coding Agent</h3>
+                <span className="status-badge status-active">Running</span>
               </div>
-
+              <p className="agent-meta">Code Accuracy: 94%</p>
+              <div className="progress-bar-bg">
+                <div className="progress-bar-fill" style={{ width: "94%", background: "var(--accent-primary)" }} />
+              </div>
             </div>
-
 
             {/* MANAGER */}
-
-            <div style={cardStyle}>
-
-              <h3>📋 Manager Agent</h3>
-
-              <p style={{ color: "#94a3b8" }}>
-                Status: 🟢 Reviewing
-              </p>
-
-              <p style={{ color: "#94a3b8" }}>
-                Approval Rate: 97%
-              </p>
-
-
-              <div
-                style={{
-                  height: "8px",
-
-                  background: "#1e293b",
-
-                  borderRadius: "10px",
-
-                  overflow: "hidden",
-
-                  marginTop: "12px"
-                }}
-              >
-
-                <div
-                  style={{
-                    width: "97%",
-
-                    height: "100%",
-
-                    background: "#a855f7"
-                  }}
-                />
-
+            <div className="agent-card">
+              <div className="agent-card-header">
+                <h3>📋 Manager Agent</h3>
+                <span className="status-badge status-active">Reviewing</span>
               </div>
-
+              <p className="agent-meta">Approval Rate: 97%</p>
+              <div className="progress-bar-bg">
+                <div className="progress-bar-fill" style={{ width: "97%", background: "var(--accent-purple)" }} />
+              </div>
             </div>
-
           </div>
-
         </div>
 
-
-        {/* FOOTER */}
-
-        <div
-          style={{
-            color: "#64748b",
-
-            fontSize: "14px",
-
-            marginTop: "40px"
-          }}
-        >
-          AI Software Company v2
+        <div className="sidebar-footer">
+          <span>AI Software Company v2</span>
         </div>
-
-      </div>
-
+      </aside>
 
       {/* MAIN CONTENT */}
-
-      <div
-        style={{
-          flex: 1,
-
-          padding: "40px"
-        }}
-      >
-
+      <main className="app-main">
         {/* HEADER */}
+        <header className="app-header">
+          <div>
+            <h1>Build Software with AI</h1>
+            <p>Describe your project idea and let autonomous agents execute it.</p>
+          </div>
 
-        <div
-          style={{
-            marginBottom: "35px"
-          }}
-        >
+          <button className="theme-toggle-btn" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
+          </button>
+        </header>
 
-          <h1
-            style={{
-              fontSize: "52px",
-
-              marginBottom: "10px",
-
-              fontWeight: "bold"
-            }}
-          >
-            Build Software with AI
-          </h1>
-
-
-          <p
-            style={{
-              color: "#94a3b8",
-
-              fontSize: "18px"
-            }}
-          >
-            Describe your project idea and let AI agents build it.
-          </p>
-
-        </div>
-
-
-        {/* INPUT */}
-
-        <div
-          style={{
-            background: "rgba(15,23,42,0.75)",
-
-            backdropFilter: "blur(20px)",
-
-            border:
-              "1px solid rgba(255,255,255,0.08)",
-
-            borderRadius: "24px",
-
-            padding: "30px",
-
-            marginBottom: "30px"
-          }}
-        >
-
+        {/* INPUT COMPOSER */}
+        <section className="app-composer">
           <textarea
-            rows="5"
-
+            rows="4"
+            className="project-prompt"
             value={text}
-
             onChange={(e) => setText(e.target.value)}
-
-            placeholder="Example: Build a calculator app with beautiful UI..."
-
-            style={{
-              width: "100%",
-
-              background: "transparent",
-
-              color: "white",
-
-              border: "none",
-
-              outline: "none",
-
-              resize: "none",
-
-              fontSize: "17px",
-
-              lineHeight: "1.8"
-            }}
+            placeholder="e.g., Build a responsive task management dashboard in React with drag-and-drop..."
           />
 
+          <div className="composer-controls">
+            <div className="options-group">
+              <label className="select-label">
+                <span>Execution Mode:</span>
+                <select
+                  value={complexity}
+                  onChange={(e) => setComplexity(e.target.value)}
+                  className="control-select"
+                >
+                  <option value="auto">Auto Select</option>
+                  <option value="simple">Simple (Fast Code Generation)</option>
+                  <option value="complex">Complex (Full Workflow Pipeline)</option>
+                </select>
+              </label>
 
-          {/* OPTIMIZATION CONTROLS */}
-
-          <div
-            style={{
-              display: "flex",
-
-              gap: "20px",
-
-              alignItems: "center",
-
-              flexWrap: "wrap",
-
-              marginTop: "20px"
-            }}
-          >
-
-            {/* COMPLEXITY */}
-
-            <label
-              style={{
-                color: "#94a3b8"
-              }}
-            >
-
-              Mode:
-
-              <select
-                value={complexity}
-
-                onChange={(e) =>
-                  setComplexity(e.target.value)
-                }
-
-                style={{
-                  marginLeft: "8px",
-
-                  padding: "8px 12px",
-
-                  borderRadius: "10px",
-
-                  background: "#0f172a",
-
-                  color: "white",
-
-                  border:
-                    "1px solid rgba(255,255,255,0.12)"
-                }}
-              >
-
-                <option value="auto">
-                  Auto
-                </option>
-
-                <option value="simple">
-                  Simple — 1 AI call
-                </option>
-
-                <option value="complex">
-                  Complex — Research + Coding
-                </option>
-
-              </select>
-
-            </label>
-
-
-            {/* MANAGER REVIEW */}
-
-            <label
-              style={{
-                color: "#94a3b8",
-
-                cursor: "pointer"
-              }}
-            >
-
-              <input
-                type="checkbox"
-
-                checked={reviewRequested}
-
-                onChange={(e) =>
-                  setReviewRequested(
-                    e.target.checked
-                  )
-                }
-
-                style={{
-                  marginRight: "8px"
-                }}
-              />
-
-              Request manager review
-
-            </label>
-
-          </div>
-
-
-          {/* GENERATE BUTTON */}
-
-          <div
-            style={{
-              display: "flex",
-
-              justifyContent: "space-between",
-
-              alignItems: "center",
-
-              marginTop: "25px"
-            }}
-          >
-
-            <button
-              onClick={runAI}
-
-              disabled={loading}
-
-              style={{
-                background:
-                  loading
-                    ? "#334155"
-                    : "linear-gradient(135deg,#2563eb,#3b82f6)",
-
-                color: "white",
-
-                border: "none",
-
-                padding: "16px 28px",
-
-                borderRadius: "16px",
-
-                cursor: "pointer",
-
-                fontSize: "16px",
-
-                fontWeight: "bold"
-              }}
-            >
-
-              {loading
-                ? "⚡ AI Agents Working..."
-                : "🚀 Generate Software"}
-
-            </button>
-
-
-            <div
-              style={{
-                color:
-                  loading
-                    ? "#38bdf8"
-                    : "#22c55e",
-
-                fontWeight: "bold"
-              }}
-            >
-
-              {loading
-                ? "Processing Request..."
-                : "System Ready"}
-
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={reviewRequested}
+                  onChange={(e) => setReviewRequested(e.target.checked)}
+                />
+                <span>Request Manager Review</span>
+              </label>
             </div>
 
+            <div className="action-group">
+              <span className={`status-indicator ${loading ? "is-loading" : "is-ready"}`}>
+                <span className="dot" />
+                {loading ? "Processing Pipeline..." : "System Ready"}
+              </span>
+
+              <button
+                onClick={runAI}
+                disabled={loading}
+                className="generate-button"
+              >
+                {loading ? "⚡ Agents Working..." : "🚀 Generate Software"}
+              </button>
+            </div>
           </div>
+        </section>
 
-        </div>
-
+        <section className={`download-section ${downloadUrl ? "is-ready" : "is-empty"}`}>
+          <div>
+            <h3>Download project ZIP</h3>
+            <p>
+              {downloadUrl
+                ? `${projectName} is ready to download.`
+                : "Generate software to create a downloadable ZIP file."}
+            </p>
+          </div>
+          {downloadUrl ? (
+            <a
+              className="download-button"
+              href={`http://127.0.0.1:8000${downloadUrl}`}
+              download
+            >
+              Download ZIP
+            </a>
+          ) : (
+            <span className="download-button is-disabled">Download ZIP</span>
+          )}
+        </section>
 
         {/* TABS */}
-
-        <div
-          style={{
-            display: "flex",
-
-            gap: "12px",
-
-            marginBottom: "25px"
-          }}
-        >
-
-          <button
-            onClick={() =>
-              setActiveTab("research")
-            }
-
-            style={tabStyle(
-              activeTab === "research"
-            )}
-          >
-            🔍 Research
-          </button>
-
-
-          <button
-            onClick={() =>
-              setActiveTab("code")
-            }
-
-            style={tabStyle(
-              activeTab === "code"
-            )}
-          >
-            💻 Code
-          </button>
-
-
-          <button
-            onClick={() =>
-              setActiveTab("review")
-            }
-
-            style={tabStyle(
-              activeTab === "review"
-            )}
-          >
-            📋 Review
-          </button>
-
-        </div>
-
+        <nav className="app-tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`tab-btn ${activeTab === tab.id ? "active" : ""}`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </nav>
 
         {/* OUTPUT */}
-
-        <div
-          style={{
-            background: "rgba(15,23,42,0.75)",
-
-            backdropFilter: "blur(20px)",
-
-            border:
-              "1px solid rgba(255,255,255,0.08)",
-
-            borderRadius: "24px",
-
-            padding: "30px",
-
-            minHeight: "500px"
-          }}
-        >
-
-          {/* RESEARCH */}
-
+        <section className="app-output">
           {activeTab === "research" && (
-
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-
-                lineHeight: "1.8",
-
-                color: "#e2e8f0"
-              }}
-            >
-              {research}
-            </pre>
-
+            <div className="output-content">
+              <h3>🔍 Research Output</h3>
+              <pre className="output-text">{research || "No research data generated yet."}</pre>
+            </div>
           )}
 
-
-          {/* CODE */}
+          {activeTab === "architecture" && (
+            <div className="output-content">
+              <h3>🏗️ System Architecture</h3>
+              <pre className="output-text">{architecture || "No architecture generated yet."}</pre>
+            </div>
+          )}
 
           {activeTab === "code" && (
-
-            <div>
-
-              <div
-                style={{
-                  display: "flex",
-
-                  justifyContent: "space-between",
-
-                  alignItems: "center",
-
-                  marginBottom: "20px"
-                }}
-              >
-
-                <h2>
-                  💻 Generated Code
-                </h2>
-
-
-                <button
-                  onClick={copyCode}
-
-                  style={{
-                    background:
-                      "linear-gradient(135deg,#2563eb,#3b82f6)",
-
-                    color: "white",
-
-                    border: "none",
-
-                    padding: "10px 18px",
-
+            <div className="output-content">
+              <div className="code-header">
+                <h3>💻 Generated Source Code</h3>
+                <button onClick={copyCode} className="copy-btn">
+                  📋 Copy Code
+                </button>
+              </div>
+              <div className="code-viewer-container">
+                <SyntaxHighlighter
+                  language="python"
+                  style={theme === "dark" ? oneDark : oneLight}
+                  customStyle={{
+                    margin: 0,
                     borderRadius: "12px",
-
-                    cursor: "pointer"
+                    fontSize: "14px",
+                    background: "var(--code-bg)"
                   }}
                 >
-                  Copy Code
-                </button>
-
+                  {code || "# No code generated yet."}
+                </SyntaxHighlighter>
               </div>
-
-
-              <SyntaxHighlighter
-                language="python"
-
-                style={oneDark}
-              >
-                {code || "No code generated yet"}
-              </SyntaxHighlighter>
-
             </div>
-
           )}
 
+          {activeTab === "testing" && (
+            <div className="output-content">
+              <h3>🧪 Test Suites & Results</h3>
+              <pre className="output-text">{testing || "No testing results available."}</pre>
+            </div>
+          )}
 
-          {/* REVIEW */}
+          {activeTab === "debugging" && (
+            <div className="output-content">
+              <h3>🐛 Debugging Logs</h3>
+              <pre className="output-text">{debugging || "No debugging required or logged."}</pre>
+            </div>
+          )}
+
+          {activeTab === "code_review" && (
+            <div className="output-content">
+              <h3>🔎 Code Quality Review</h3>
+              <pre className="output-text">{codeReview || "No code review generated yet."}</pre>
+            </div>
+          )}
+
+          {activeTab === "validation" && (
+            <div className="output-content">
+              <h3>✅ Validation Status</h3>
+              <div className="validation-metrics">
+                <div className="metric-box">
+                  <span className="metric-label">Status</span>
+                  <span className="metric-value">{validation?.status || "N/A"}</span>
+                </div>
+                <div className="metric-box">
+                  <span className="metric-label">Retry Count</span>
+                  <span className="metric-value">{retryCount}</span>
+                </div>
+              </div>
+              {validation && (
+                <pre className="output-text">
+                  {JSON.stringify(validation, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
 
           {activeTab === "review" && (
-
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-
-                lineHeight: "1.8",
-
-                color: "#e2e8f0"
-              }}
-            >
-              {review}
-            </pre>
-
+            <div className="output-content">
+              <h3>📋 Manager Final Review</h3>
+              <pre className="output-text">{review || "No manager review requested or available."}</pre>
+            </div>
           )}
-
-        </div>
-
-      </div>
-
+        </section>
+      </main>
     </div>
   );
 }
-
 
 export default App;
