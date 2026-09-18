@@ -112,9 +112,13 @@ function App() {
       );
     } catch (error) {
       console.error(error);
+      const errorMessage =
+        error.response?.data?.detail ||
+        error.message ||
+        "The backend could not complete the request.";
       setResearch("Error generating research");
       setArchitecture("Error generating architecture");
-      setCode("Error generating code");
+      setCode(`Error generating code: ${errorMessage}`);
       setTesting("Error generating testing result");
       setDebugging("Error generating debugging result");
       setCodeReview("Error generating code review");

@@ -199,8 +199,6 @@ async def run_company(data: ProjectRequest):
     try:
         project = write_project(
             generated_files,
-            project_request=data.project_request,
-            architecture=architecture_output,
         )
         project["download_url"] = (
             f"/projects/{project['project_id']}/download"
